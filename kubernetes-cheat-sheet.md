@@ -16,10 +16,11 @@ Quick reference for everyday `kubectl` plus advanced commands for GPU / AI / ML 
 8. [Storage](#storage)
 9. [Scaling & Rollouts](#scaling--rollouts)
 10. [Debugging & Troubleshooting](#debugging--troubleshooting)
-11. [RBAC & Security](#rbac--security)
-12. [Jobs & CronJobs](#jobs--cronjobs)
-13. [Advanced: AI / GPU Workloads](#advanced-ai--gpu-workloads)
-14. [Useful One-Liners](#useful-one-liners)
+11. [Node Taints & Tolerations](#node-taints--tolerations)
+12. [RBAC & Security](#rbac--security)
+13. [Jobs & CronJobs](#jobs--cronjobs)
+14. [Advanced: AI / GPU Workloads](#advanced-ai--gpu-workloads)
+15. [Useful One-Liners](#useful-one-liners)
 
 ---
 
@@ -266,6 +267,79 @@ kubectl debug node/<node> -it --image=busybox
 # Pending pod reasons
 kubectl get pods --field-selector=status.phase=Pending
 ```
+
+---
+
+## Node Taints & Tolerations
+
+A **taint** marks a node so the scheduler *repels* pods that do not **tolerate** it. Use taints to reserve nodes (GPU pools, dedicated tenants, control-plane) or to evict pods during maintenance.
+
+Taints are `key=value:effect` (value is optional). Effects:
+
+| Effect | Behavior |
+|--------|----------|
+| `NoSchedule` | New pods without a matching toleration are not scheduled. Existing pods stay. |
+| `PreferNoSchedule` | Soft avoid — scheduler tries not to place non-tolerating pods, but may still. |
+| `NoExecute` | New pods blocked **and** running pods without a toleration are evicted (optionally after `tolerationSeconds`). |
+
+```bash
+# Inspect current taints
+kubectl get nodes -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints
+kubectl describe node <node> | grep -A5 Taints
+
+# Add a taint (reserve node for GPU workloads)
+kubectl taint nodes <node> nvidia.com/gpu=true:NoSchedule
+
+# Prefer to keep general workloads off this node (soft)
+kubectl taint nodes <node> dedicated=batch:PreferNoSchedule
+
+# Evict pods that do not tolerate the taint
+kubectl taint nodes <node> maintenance=true:NoExecute
+
+# Remove a specific taint (trailing '-')
+kubectl taint nodes <node> nvidia.com/gpu=true:NoSchedule-
+kubectl taint nodes <node> maintenance=true:NoExecute-
+
+# Overwrite an existing taint with the same key/effect
+kubectl taint nodes <node> dedicated=gpu:NoSchedule --overwrite
+```
+
+Pods need a matching **toleration** to land on (or stay on) a tainted node:
+
+```yaml
+spec:
+  tolerations:
+  # Match key + value + effect
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+  # Or tolerate any value for that key
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+  # Stay up to 5 minutes after a NoExecute taint is applied
+  - key: maintenance
+    operator: Exists
+    effect: NoExecute
+    tolerationSeconds: 300
+```
+
+```bash
+# Quick check: can this pod schedule onto a tainted GPU node?
+# Pending + "had taint {…} that the pod didn't tolerate" in Events → missing toleration
+kubectl describe pod <name>
+```
+
+**Taint vs cordon**
+
+| Action | What it does |
+|--------|----------------|
+| `kubectl cordon <node>` | Marks node unschedulable (`SchedulingDisabled`) for *all* new pods |
+| `kubectl taint …:NoSchedule` | Blocks only pods that lack a matching toleration |
+| `kubectl drain <node>` | Cordons + evicts pods (respects PodDisruptionBudgets) |
+
+Control-plane nodes are often tainted with `node-role.kubernetes.io/control-plane:NoSchedule` so workloads stay on workers unless they explicitly tolerate it.
 
 ---
 
