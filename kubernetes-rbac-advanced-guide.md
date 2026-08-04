@@ -530,41 +530,171 @@ done
 
 ## 9. Multi-Tenancy & Namespace Isolation
 
-### Soft multi-tenancy (shared cluster)
+RBAC scopes *who* can call the API. Tenant isolation is broader: it also covers network paths, node/kernel blast radius, storage, and admission. Treat isolation as layered controls, not a single RoleBinding.
+
+### Isolation pattern spectrum
+
+| Pattern | Trust model | Control-plane share | Data-plane share | Typical use |
+|---------|-------------|---------------------|------------------|-------------|
+| Soft multi-tenancy (namespace-per-tenant) | Trusted / semi-trusted teams | Shared | Shared nodes | Internal platform, cost efficiency |
+| Hierarchy (HNC / sub-namespaces) | Trusted org with nested teams | Shared | Shared nodes | Enterprise org → team → env trees |
+| Virtual clusters (vCluster / loft) | Semi-trusted tenants needing own APIs | Shared host, virtualized API | Usually shared nodes | SaaS-ish platforms, tenant admins |
+| Hard multi-tenancy (cluster-per-tenant) | Untrusted / regulated | Separate | Separate | Hostile tenants, strong compliance |
+
+Pick the weakest pattern that still meets your threat model. Stronger isolation costs ops and money; weaker isolation needs stricter policy.
+
+### Pattern A — Soft multi-tenancy (shared cluster)
+
+One cluster, one namespace (or small set) per tenant. Isolation is policy-enforced, not physical.
 
 | Control | Purpose |
 |---------|---------|
-| Namespace per team | Isolation boundary |
-| RoleBinding to `edit`/`view` | Human access |
-| ResourceQuota / LimitRange | Capacity fairness |
-| NetworkPolicy | Traffic isolation |
-| Deny ClusterRoleBindings for tenants | Prevent privilege escape |
+| Namespace per team/tenant | Primary RBAC and quota boundary |
+| RoleBinding to `edit`/`view` (or custom) | Human access scoped to their ns |
+| No ClusterRoleBindings for tenants | Prevent privilege escape |
+| ResourceQuota / LimitRange | Capacity fairness / noisy-neighbor control |
+| NetworkPolicy (default-deny + allowlists) | East-west traffic isolation |
+| Pod Security Admission / Kyverno / OPA | Block privileged pods, hostPath, hostNetwork |
+| Separate SAs per workload | Limit token blast radius inside the ns |
 
 ```bash
 # Tenant should NOT be able to do this:
 kubectl auth can-i create clusterrolebindings --as=alice@example.com
+# no
+
+kubectl auth can-i create namespaces --as=alice@example.com
+# no
+
+kubectl auth can-i get pods -n other-tenant --as=system:serviceaccount:team-a:app
+# no
+```
+
+**What soft multi-tenancy does *not* give you:** kernel/node isolation. A container escape or privileged misconfig can still reach other tenants on the same node.
+
+### Pattern B — Hierarchical namespaces
+
+Use **Hierarchical Namespace Controller (HNC)** when tenants are nested (org → team → env) and you want:
+
+- Sub-namespaces that inherit labels/policies from a parent
+- Propagated Roles/RoleBindings (or deliberate non-propagation)
+- Admin boundaries that mirror the org chart without a ClusterRoleBinding per leaf
+
+RBAC tip: bind humans at the parent or leaf namespace with RoleBindings; keep cluster-scoped privileges on platform groups only. Propagate *read* more freely than *bind/escalate*.
+
+### Pattern C — Virtual clusters
+
+**vCluster** (and similar: loft, kamaji-style setups) gives each tenant a virtual control plane:
+
+- Tenant gets admin-like RBAC *inside* their virtual API server
+- Host cluster maps synced resources into a host namespace (or set of namespaces)
+- Host RBAC for the syncer/agent stays tightly scoped; tenants never get host `cluster-admin`
+
+Use when tenants need CRDs, their own ClusterRoles, or “looks like my own cluster” UX, but you still want one physical fleet. Still combine with NetworkPolicy + PSA on the host; the virtual API is not a node security boundary by itself.
+
+### Pattern D — Hard multi-tenancy (cluster-per-tenant)
+
+Separate clusters (or dedicated node pools + separate control planes) when tenants are untrusted or regulated:
+
+- Separate etcd / API servers → no shared RBAC mistakes across tenants
+- Optional separate accounts/projects in the cloud IAM layer
+- Higher cost; simpler mental model for blast radius
+
+Even here, use least-privilege for platform automation that touches many clusters (fleet controllers should impersonate or use per-cluster credentials, not one global `cluster-admin`).
+
+### Layered controls (apply on every pattern)
+
+```
+Identity (OIDC/IAM)
+    → RBAC (Role/RoleBinding per tenant ns)
+        → Admission (PSA / ValidatingAdmissionPolicy / Kyverno / OPA)
+            → NetworkPolicy (+ optionally service mesh authz)
+                → Runtime (seccomp, drop caps, no privileged)
+                    → Node / cluster separation (when trust is low)
+```
+
+| Layer | Soft ns | Virtual cluster | Dedicated cluster |
+|-------|---------|-----------------|-------------------|
+| RBAC namespace boundary | Required | Host + virtual | Per cluster |
+| Deny tenant ClusterRoleBindings | Required | On host | N/A (they own theirs) |
+| Default-deny NetworkPolicy | Strongly recommended | Strongly recommended | Per threat model |
+| PSA `restricted` or equivalent | Strongly recommended | On host synced pods | Recommended |
+| ResourceQuota | Required for fairness | Per virtual / host ns | Optional |
+| Dedicated nodes / sandboxes (gVisor, Kata) | Optional hardening | Optional | Optional |
+
+### Example: tenant namespace bootstrap (soft pattern)
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-a
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    tenant: team-a
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: team-a-quota
+  namespace: team-a
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    pods: "50"
+    persistentvolumeclaims: "10"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: team-a
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+# Follow with allow-DNS / allow-same-ns / allow-egress-to-platform policies.
+```
+
+```bash
+# Bind the tenant group to namespaced edit — not cluster-admin
+kubectl create rolebinding team-a-edit \
+  --clusterrole=edit \
+  --group=team-a@example.com \
+  -n team-a
+
+# Verify isolation
+kubectl auth can-i create deployments -n team-a --as=jane@example.com --as-group=team-a@example.com
+# yes
+kubectl auth can-i create deployments -n team-b --as=jane@example.com --as-group=team-a@example.com
 # no
 ```
 
 ### Hardening checklist per tenant namespace
 
 ```bash
-# 1. Create ns + quota + default-deny NetworkPolicy
-# 2. Bind group to edit (not cluster-admin)
-# 3. Disable default SA token automount
-# 4. Restrict Role creation (don't bind admin if they shouldn't manage RBAC)
-# 5. Use Kyverno/OPA to block privileged pods, hostPath, etc.
+# 1. Create ns + quota + LimitRange + default-deny NetworkPolicy
+# 2. Label ns for PSA (restricted) or enforce via Kyverno/OPA
+# 3. Bind group to edit/view/custom Role — never cluster-admin
+# 4. Disable default SA token automount; create purpose-built SAs
+# 5. Restrict Role/RoleBinding creation if tenants shouldn't manage RBAC
+# 6. Block privileged pods, hostPath, hostNetwork, NodePort abuse
+# 7. Deny creating ClusterRoleBindings / touching cluster-scoped resources
+# 8. Audit: can-i checks for tenant users AND their workload SAs
 ```
 
-### Hierarchical namespaces / virtual clusters
+### Choosing a pattern (quick guide)
 
-For stronger isolation, consider:
+- **Same company, shared ops, cost-sensitive** → Pattern A (+ PSA + NetworkPolicy + quotas)
+- **Nested teams / delegated ns admin** → Pattern B (HNC) on top of A
+- **Tenants need their own CRDs / cluster-scoped objects** → Pattern C (vCluster)
+- **Untrusted tenants, strong compliance, or hostile code** → Pattern D (dedicated cluster), optionally with sandbox runtimes
 
-- **Hierarchical Namespace Controller (HNC)** — inherit policies, sub-namespaces
-- **vCluster / loft** — virtual control planes per tenant
-- Separate clusters for untrusted tenants
-
-RBAC alone is **not** a security boundary against a privileged container escape.
+RBAC alone is **not** a security boundary against a privileged container escape. Combine API authorization with admission, network, and (when needed) node or cluster separation.
 
 ---
 
