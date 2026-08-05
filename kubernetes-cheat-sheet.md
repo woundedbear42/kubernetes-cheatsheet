@@ -8,20 +8,22 @@ Quick reference for everyday `kubectl` plus advanced commands for GPU / AI / ML 
 
 1. [Setup & Context](#setup--context)
 2. [Cluster State in etcd](#cluster-state-in-etcd)
-3. [Namespaces](#namespaces)
-4. [Get / Inspect Resources](#get--inspect-resources)
-5. [Pods](#pods)
-6. [Deployments & Workloads](#deployments--workloads)
-7. [Services & Networking](#services--networking)
-8. [ConfigMaps & Secrets](#configmaps--secrets)
-9. [Storage](#storage)
-10. [Scaling & Rollouts](#scaling--rollouts)
-11. [Debugging & Troubleshooting](#debugging--troubleshooting)
-12. [Node Taints & Tolerations](#node-taints--tolerations)
-13. [RBAC & Security](#rbac--security)
-14. [Jobs & CronJobs](#jobs--cronjobs)
-15. [Advanced: AI / GPU Workloads](#advanced-ai--gpu-workloads)
-16. [Useful One-Liners](#useful-one-liners)
+3. [Backing Up & Restoring etcd](#backing-up--restoring-etcd)
+4. [Upgrading Kubernetes](#upgrading-kubernetes)
+5. [Namespaces](#namespaces)
+6. [Get / Inspect Resources](#get--inspect-resources)
+7. [Pods](#pods)
+8. [Deployments & Workloads](#deployments--workloads)
+9. [Services & Networking](#services--networking)
+10. [ConfigMaps & Secrets](#configmaps--secrets)
+11. [Storage](#storage)
+12. [Scaling & Rollouts](#scaling--rollouts)
+13. [Debugging & Troubleshooting](#debugging--troubleshooting)
+14. [Node Taints & Tolerations](#node-taints--tolerations)
+15. [RBAC & Security](#rbac--security)
+16. [Jobs & CronJobs](#jobs--cronjobs)
+17. [Advanced: AI / GPU Workloads](#advanced-ai--gpu-workloads)
+18. [Useful One-Liners](#useful-one-liners)
 
 ---
 
@@ -110,11 +112,6 @@ $ETCDCTL member list -w table
 # Browse keys (prefix)
 $ETCDCTL get /registry/namespaces --prefix --keys-only
 $ETCDCTL get /registry/pods/ai-workloads --prefix --keys-only
-
-# Snapshot backup / restore (take backups regularly; test restore)
-$ETCDCTL snapshot save /var/backups/etcd-$(date +%F).db
-etcdctl snapshot status /var/backups/etcd-YYYY-MM-DD.db -w table
-# Restore is stop-etcd → snapshot restore → rewrite member config → start — follow your distro’s runbook
 ```
 
 ```bash
@@ -124,6 +121,172 @@ kubectl get secret <name> -n <ns> -o yaml
 ```
 
 **Do not** edit etcd keys by hand to “fix” objects — you can desync controllers and corrupt cluster state. Change resources through `kubectl` / the API; use snapshots for disaster recovery.
+
+---
+
+## Backing Up & Restoring etcd
+
+An etcd snapshot is the cluster’s disaster-recovery checkpoint for **API object state**. It does **not** back up PV contents, node disks, or external databases — back those up separately.
+
+### What to back up together
+
+| Asset | Why |
+|-------|-----|
+| etcd snapshot (`.db`) | All Kubernetes API objects |
+| `/etc/kubernetes/pki` (or equivalent certs) | API / etcd / admin certs needed after restore |
+| kubeadm / cluster config | How the control plane was built |
+| EncryptionConfig + encryption keys | Required if Secrets are encrypted at rest in etcd |
+| CSI / cloud volume snapshots | Application data on PVs |
+
+### Take a snapshot (kubeadm-style stacked etcd)
+
+Run on a healthy control-plane node (or against a reachable etcd endpoint):
+
+```bash
+ETCDCTL="etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key"
+
+# Confirm cluster is healthy first
+$ETCDCTL endpoint health --cluster
+
+# Write a consistent snapshot (safe on a live cluster)
+mkdir -p /var/backups/etcd
+$ETCDCTL snapshot save /var/backups/etcd/etcd-$(date +%F-%H%M).db
+
+# Verify the file is a valid snapshot
+etcdctl snapshot status /var/backups/etcd/etcd-YYYY-MM-DD-HHMM.db -w table
+
+# Copy off-box (example)
+scp /var/backups/etcd/etcd-*.db backup-host:/backups/k8s/
+tar -C /etc/kubernetes -czf pki-$(date +%F).tar.gz pki
+```
+
+Managed Kubernetes (EKS/GKE/AKS) usually handles etcd for you — use the provider’s control-plane backup / restore features instead of raw `etcdctl`.
+
+### Restore overview (stacked etcd)
+
+Exact steps vary by install (kubeadm stacked vs external etcd). Typical flow for a **single** control-plane disaster restore:
+
+```bash
+# 1. Stop API server / etcd static pods (move manifests aside)
+mv /etc/kubernetes/manifests /etc/kubernetes/manifests.bak
+# wait until etcd / kube-apiserver containers stop
+
+# 2. Restore snapshot into a new data dir
+etcdctl snapshot restore /var/backups/etcd/etcd-YYYY-MM-DD-HHMM.db \
+  --data-dir=/var/lib/etcd-restore
+
+# 3. Point etcd at the restored data (update manifest hostPath / --data-dir)
+#    For multi-member etcd: restore as a new single-member cluster, then re-add members
+#    per the current Kubernetes / etcd restore docs — do not reuse old member IDs blindly.
+
+# 4. Restore manifests and wait for control plane
+mv /etc/kubernetes/manifests.bak /etc/kubernetes/manifests
+kubectl get nodes
+kubectl get cs 2>/dev/null; kubectl get --raw='/readyz?verbose'
+```
+
+**Practice restores in a lab.** A snapshot you have never restored is not a tested backup.
+
+### Backup hygiene
+
+```bash
+# Before upgrades, node replacements, or etcd changes — always:
+$ETCDCTL snapshot save /var/backups/etcd/pre-upgrade-$(date +%F-%H%M).db
+
+# Keep retention off-node; encrypt backups if they contain Secrets (they do).
+# After restore with encryption-at-rest, the same EncryptionConfiguration keys must be available.
+```
+
+---
+
+## Upgrading Kubernetes
+
+Upgrade **one minor version at a time** (e.g. 1.28 → 1.29 → 1.30). Skipping minors is unsupported and breaks the version skew policy.
+
+### Version skew (remember these)
+
+| Component | Rule of thumb |
+|-----------|----------------|
+| kube-apiserver | Newest component — upgrade control plane first |
+| kube-controller-manager / scheduler | Same version as kube-apiserver |
+| kubelet | May be up to **two** minor versions behind apiserver; never newer |
+| kubectl | Preferably within one minor of the cluster |
+| kube-proxy / CNI | Follow their upgrade notes; often with node / control plane |
+
+### Pre-upgrade checklist
+
+```bash
+# 1. Snapshot etcd (+ PKI / encryption keys) — see previous section
+# 2. Check current versions & node health
+kubectl version
+kubectl get nodes -o wide
+kubectl get pods -A | grep -E 'kube-system|CrashLoop|Pending'
+
+# 3. Drain impact: PDBs, singleton pods, GPU jobs
+kubectl get pdb -A
+kubectl get pods -A -o wide --field-selector spec.nodeName=<node>
+
+# 4. Read release notes for removals (APIs, feature gates, CNI, device plugins)
+# 5. Match addon versions (CoreDNS, CNI, CSI, metrics-server, GPU operator) to the target minor
+```
+
+### kubeadm upgrade path (control plane, then workers)
+
+```bash
+# --- On a control-plane node ---
+apt-get update && apt-get install -y kubeadm=<target>.x-00   # or yum/dnf equivalent
+kubeadm upgrade plan
+kubeadm upgrade apply v<target>          # first control plane
+# additional control planes:
+kubeadm upgrade node
+
+# Upgrade kubelet + kubectl on that node, then restart kubelet
+apt-get install -y kubelet=<target>.x-00 kubectl=<target>.x-00
+systemctl daemon-reload && systemctl restart kubelet
+kubectl get nodes   # control plane should show new version
+
+# --- Workers (one by one, or per surge pool) ---
+kubectl cordon <node>
+kubectl drain <node> --ignore-daemonsets --delete-emptydir-data
+# on the node:
+apt-get install -y kubeadm=<target>.x-00
+kubeadm upgrade node
+apt-get install -y kubelet=<target>.x-00 kubectl=<target>.x-00
+systemctl daemon-reload && systemctl restart kubelet
+# back on admin machine:
+kubectl uncordon <node>
+```
+
+### Managed clusters
+
+```bash
+# Upgrade via cloud control plane first, then node pools / node groups
+# EKS example concepts: update cluster version → update add-ons → rotate node groups
+# GKE: control plane upgrade → node pool upgrade (surge / blue-green)
+# AKS: az aks upgrade → node image / pool upgrade
+
+# Always confirm:
+kubectl get nodes
+kubectl get pods -A
+kubectl get --raw='/readyz?verbose'
+```
+
+### Post-upgrade
+
+```bash
+# API deprecations still in use?
+kubectl get --raw=/metrics | grep apiserver_requested_deprecated_apis || true
+
+# Critical addons
+kubectl -n kube-system get pods
+kubectl get ds -A
+# GPU clusters: recheck allocatable GPUs after kubelet / device-plugin restart
+kubectl get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu
+```
+
+**Order that usually works:** etcd backup → control plane → CNI/CSI/core addons → workers (drain/uncordon) → operators (GPU, ingress, service mesh) → re-validate workloads.
 
 ---
 
