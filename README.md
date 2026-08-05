@@ -6,7 +6,7 @@ Practical kubectl references for day-to-day cluster work and AI/GPU workloads, p
 
 | File | Description |
 |------|-------------|
-| [kubernetes-cheat-sheet.md](./kubernetes-cheat-sheet.md) | Core `kubectl` commands and advanced AI/GPU workload patterns |
+| [kubernetes-cheat-sheet.md](./kubernetes-cheat-sheet.md) | Core `kubectl` commands, etcd state/backup, upgrades, and AI/GPU patterns |
 | [kubernetes-rbac-advanced-guide.md](./kubernetes-rbac-advanced-guide.md) | Deep-dive RBAC: roles, bindings, least privilege, tenant isolation patterns, debugging |
 
 ## Quick start
