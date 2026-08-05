@@ -7,20 +7,21 @@ Quick reference for everyday `kubectl` plus advanced commands for GPU / AI / ML 
 ## Table of Contents
 
 1. [Setup & Context](#setup--context)
-2. [Namespaces](#namespaces)
-3. [Get / Inspect Resources](#get--inspect-resources)
-4. [Pods](#pods)
-5. [Deployments & Workloads](#deployments--workloads)
-6. [Services & Networking](#services--networking)
-7. [ConfigMaps & Secrets](#configmaps--secrets)
-8. [Storage](#storage)
-9. [Scaling & Rollouts](#scaling--rollouts)
-10. [Debugging & Troubleshooting](#debugging--troubleshooting)
-11. [Node Taints & Tolerations](#node-taints--tolerations)
-12. [RBAC & Security](#rbac--security)
-13. [Jobs & CronJobs](#jobs--cronjobs)
-14. [Advanced: AI / GPU Workloads](#advanced-ai--gpu-workloads)
-15. [Useful One-Liners](#useful-one-liners)
+2. [Cluster State in etcd](#cluster-state-in-etcd)
+3. [Namespaces](#namespaces)
+4. [Get / Inspect Resources](#get--inspect-resources)
+5. [Pods](#pods)
+6. [Deployments & Workloads](#deployments--workloads)
+7. [Services & Networking](#services--networking)
+8. [ConfigMaps & Secrets](#configmaps--secrets)
+9. [Storage](#storage)
+10. [Scaling & Rollouts](#scaling--rollouts)
+11. [Debugging & Troubleshooting](#debugging--troubleshooting)
+12. [Node Taints & Tolerations](#node-taints--tolerations)
+13. [RBAC & Security](#rbac--security)
+14. [Jobs & CronJobs](#jobs--cronjobs)
+15. [Advanced: AI / GPU Workloads](#advanced-ai--gpu-workloads)
+16. [Useful One-Liners](#useful-one-liners)
 
 ---
 
@@ -47,6 +48,82 @@ alias kgd='kubectl get deployments'
 alias kgn='kubectl get nodes'
 alias kgs='kubectl get svc'
 ```
+
+---
+
+## Cluster State in etcd
+
+Kubernetes keeps **desired and reported cluster state** in **etcd** — a consistent key-value store. Almost every `kubectl get` / `apply` ultimately reads or writes that store through the API server.
+
+### How the path works
+
+```
+kubectl / controllers / operators
+        │
+        ▼
+   kube-apiserver   ←── only component that talks to etcd
+        │
+        ▼
+      etcd          ←── source of truth for API objects
+```
+
+| Layer | Role |
+|-------|------|
+| Clients & controllers | Read/watch/write via the Kubernetes API (never talk to etcd directly) |
+| `kube-apiserver` | Authn/authz, validation, admission, then persist to etcd; serves watches |
+| etcd | Stores serialized API objects; quorum writes for consistency |
+
+Controllers (scheduler, kubelet via node authorizer, deployments controller, etc.) **watch** the API, compare desired vs actual, and write updates back. etcd itself does not “run” reconciliation — it only stores state.
+
+### What lives in etcd (and what does not)
+
+| In etcd | Not in etcd |
+|---------|-------------|
+| Pods, Deployments, Services, Jobs, … | Container logs (node filesystem / log backend) |
+| ConfigMaps, Secrets (often encrypted at rest) | Image layers / registry content |
+| RBAC, namespaces, CRDs & CR instances | Persistent volume *data* (CSI / cloud disks) |
+| Node and Lease objects, EndpointSlices | Metrics time-series (metrics-server / Prometheus) |
+| Controller revisions / history metadata | etcd’s own member config outside the KV data |
+
+Objects are stored under keys like `/registry/<resource>/<namespace>/<name>` (cluster-scoped resources omit the namespace segment), typically as protobuf (sometimes JSON for older / atypical paths).
+
+### Consistency & watches
+
+- Writes go through etcd’s Raft quorum — a successful API write is durable on a majority of etcd members.
+- Each object has a **`resourceVersion`**; list/watch uses it so controllers can resume without full resyncs when possible.
+- `kubectl apply` is optimistic concurrency: conflicting concurrent updates can get a `409 Conflict` when `resourceVersion` does not match.
+
+### Inspect & operate (control-plane access)
+
+Direct etcd access is for break-glass / backup — prefer the API for day-to-day work.
+
+```bash
+# Typical kubeadm static-pod etcd on a control-plane node
+ETCDCTL="etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key"
+
+# Member health & endpoints
+$ETCDCTL endpoint health
+$ETCDCTL member list -w table
+
+# Browse keys (prefix)
+$ETCDCTL get /registry/namespaces --prefix --keys-only
+$ETCDCTL get /registry/pods/ai-workloads --prefix --keys-only
+
+# Snapshot backup / restore (take backups regularly; test restore)
+$ETCDCTL snapshot save /var/backups/etcd-$(date +%F).db
+etcdctl snapshot status /var/backups/etcd-YYYY-MM-DD.db -w table
+# Restore is stop-etcd → snapshot restore → rewrite member config → start — follow your distro’s runbook
+```
+
+```bash
+# Encryption at rest: Secrets may be encrypted in etcd (EncryptionConfiguration on the API server).
+# If enabled, raw etcd values are ciphertext — decrypt only via the API:
+kubectl get secret <name> -n <ns> -o yaml
+```
+
+**Do not** edit etcd keys by hand to “fix” objects — you can desync controllers and corrupt cluster state. Change resources through `kubectl` / the API; use snapshots for disaster recovery.
 
 ---
 
