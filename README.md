@@ -1,6 +1,6 @@
 # Kubernetes Cheat Sheets
 
-Practical kubectl references for day-to-day cluster work and AI/GPU workloads, plus an advanced RBAC guide.
+Practical kubectl references for day-to-day cluster work and AI/GPU workloads, plus guides for RBAC and Argo CD GitOps.
 
 ## Documents
 
@@ -8,6 +8,7 @@ Practical kubectl references for day-to-day cluster work and AI/GPU workloads, p
 |------|-------------|
 | [kubernetes-cheat-sheet.md](./kubernetes-cheat-sheet.md) | Core `kubectl` commands, etcd state/backup, upgrades, and AI/GPU patterns |
 | [kubernetes-rbac-advanced-guide.md](./kubernetes-rbac-advanced-guide.md) | Deep-dive RBAC: roles, bindings, least privilege, tenant isolation patterns, debugging |
+| [argocd-integration-guide.md](./argocd-integration-guide.md) | Argo CD install, GitOps layout, Application workflow, sync/promotion, and troubleshooting |
 
 ## Quick start
 
