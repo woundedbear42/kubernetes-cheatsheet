@@ -32,7 +32,7 @@ A **deployment model** answers:
 |-------|------------------|
 | Pod / ReplicaSet strategy | How new pods replace old ones (`Recreate` vs `RollingUpdate`) |
 | Service / Ingress / mesh | Which pods receive user traffic |
-| Release controller | Automation, analysis, automatic rollback (Argo Rollouts, Flaggeer, …) |
+| Release controller | Automation, analysis, automatic rollback (Argo Rollouts, Flagger, …) |
 | Git / CI | What image tag is desired and when it is promoted |
 
 ```
