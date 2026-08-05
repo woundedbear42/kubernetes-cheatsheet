@@ -1,6 +1,6 @@
 # Kubernetes Cheat Sheets
 
-Practical kubectl references for day-to-day cluster work and AI/GPU workloads, plus guides for RBAC and Argo CD GitOps.
+Practical kubectl references for day-to-day cluster work and AI/GPU workloads, plus RBAC and Argo CD cheat sheets / guides.
 
 ## Documents
 
