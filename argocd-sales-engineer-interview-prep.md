@@ -7,6 +7,8 @@ Related technical refs in this repo:
 - [`argocd-integration-guide.md`](./argocd-integration-guide.md) — install, GitOps layout, sync/promotion
 - [`kubernetes-deployment-models.md`](./kubernetes-deployment-models.md) — rolling, blue-green, canary, progressive delivery
 
+This guide also covers **Kustomize** (manifest overlays) and **Kargo** (continuous promotion) as adjacent topics interviewers often expect.
+
 ---
 
 ## Table of Contents
