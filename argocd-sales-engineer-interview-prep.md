@@ -430,7 +430,7 @@ Depending on the employer (often Akuity or a partner/vendor in the Argo ecosyste
 1. Rehearse a 2-minute “who I am + why Argo SE” pitch.
 2. Rebuild one tiny Argo CD demo mentally: app from Git → sync → drift → heal.
 3. Skim Applications, ApplicationSets, sync policies, [Kustomize](#kustomize-manifest-composition), [Kargo](#kargo-continuous-promotion), and [deployment models](#deployment-models-with-argo-cd) (plus this repo’s Argo CD / K8s guides).
-4. Be ready with one-sentence contrasts: App of Apps vs ApplicationSets; Kustomize vs Helm; Argo CD vs Kargo vs Rollouts; rolling vs canary.
+4. Be ready with one-sentence contrasts: App of Apps vs ApplicationSets; **Kustomize vs Helm** (and when you’d pick each); Argo CD vs Kargo vs Rollouts; rolling vs canary.
 5. Pick 2–3 customer-value stories from your past (even if not Argo-specific).
 6. Research the company’s packaging (OSS vs enterprise vs managed, and whether Kargo is in the portfolio) so your “why here” isn’t generic.
 
