@@ -205,21 +205,90 @@ Argo CD Application for prod typically points at `path: apps/my-service/overlays
 | Image transformers | `kustomize edit set image …` (or Kargo doing that) updates the digest in Git |
 | Works with raw YAML teams | Good landing zone when Helm feels heavy |
 
-### Kustomize vs Helm (one-liner contrast)
+### Kustomize vs Helm — strengths, weaknesses, and when to prefer which
+
+**SE soundbite:** Helm packages and parameterizes; Kustomize overlays and patches. Many platforms use **both** (Helm for third-party, Kustomize for first-party services).
 
 | | **Kustomize** | **Helm** |
 |--|---------------|----------|
-| Style | Patch/overlay composition | Templates + values |
-| Best when | Same app shape across envs; platform-owned YAML | Vendor charts, many optional features, value-driven installs |
-| With Argo CD | `path` to overlay | `helm.valueFiles` / `helm.parameters` on the Application |
+| Style | Patch/overlay composition on real YAML | Go templates + `values.yaml` |
+| With Argo CD | `path` to an overlay | Chart path/repo + `helm.valueFiles` / `helm.parameters` |
+| Learning curve | Lower if you already read Kubernetes YAML | Higher (templating, chart lifecycle, hooks) |
+| Ecosystem | Native to kubectl; fewer “chart repos” | Huge catalog of vendor/community charts |
 
-**SE soundbite:** Helm packages and parameterizes; Kustomize overlays and patches. Many platforms use **both** (Helm for third-party, Kustomize for first-party services).
+#### Kustomize — strengths
+
+- **Readable diffs:** Overlays are patches on real manifests; PR review stays close to what the cluster will run.
+- **No template language:** Fewer “render surprises”; what you see in `kustomize build` is mostly what you authored.
+- **Env modeling feels natural:** `base` + `overlays/{dev,staging,prod}` matches how platform teams think about promotion.
+- **Native in the toolchain:** Built into `kubectl` and first-class in Argo CD — no chart museum required for first-party apps.
+- **Composes cleanly:** Bases, components, and strategic/JSON patches stack without forking a whole chart.
+- **Promotion-friendly:** Image/name/label transformers pair well with Kargo or simple GitOps image bumps.
+
+#### Kustomize — weaknesses
+
+- **Weak at optional complexity:** Turning whole subsystems on/off (ingress *or* mesh *or* CRDs) gets awkward vs Helm `if` blocks.
+- **Not a packaging/distribution format:** Sharing a versioned “app product” with outsiders is clumsier than a Helm chart.
+- **Patch sprawl:** Many overlays + JSON6902 patches can become hard to reason about without discipline.
+- **Less parameterization for consumers:** End users expect a values file; Kustomize pushes them toward forks or thick overlays.
+- **Limited logic:** No loops/conditionals — repeated resources often mean copy/paste or generators you have to maintain.
+- **Third-party gap:** Most commercial/OSS operators ship **Helm charts**, not Kustomize bases.
+
+#### Helm — strengths
+
+- **Packaging & distribution:** Versioned charts, repos, `helm dependency` — the default way vendors ship Kubernetes software.
+- **Strong parameterization:** One chart + values covers many install shapes (HA toggles, ingress class, replica math).
+- **Conditionals & helpers:** `_helpers.tpl` and `if`/`range` express optional features without maintaining N overlay trees.
+- **Release metadata:** Helm’s release/revision model (and hooks) is familiar to many platform/ops buyers.
+- **Huge ecosystem:** Ingress controllers, databases, observability stacks — “is there a chart?” is usually yes.
+- **Argo CD integration is mature:** Multi-source apps, value files per env, parameters overrides in the Application.
+
+#### Helm — weaknesses
+
+- **Template opacity:** Rendered YAML can diverge from what reviewers thought they changed; debugging needs `helm template` / Argo’s hard refresh.
+- **Values sprawl:** Deep nested values and copy-pasted `values-prod.yaml` become their own config debt.
+- **Easy to over-abstract:** Charts that try to support every option become unreadable and fragile.
+- **Drift from “plain YAML” culture:** App teams that own Deployments directly often resist living inside templates.
+- **Hook / CRD pitfalls:** CRD install order, hook failures, and lookup tricks can surprise GitOps workflows.
+- **Worse default PR story for env diffs:** Env differences buried in values are harder to eyeball than a small Kustomize patch — unless you keep values thin and disciplined.
+
+#### Prefer **Kustomize** when…
+
+| Situation | Why |
+|-----------|-----|
+| First-party services your platform owns end-to-end | You control the YAML; overlays beat templating |
+| Envs are mostly the same shape (replicas, resources, image, labels) | Patches stay small and reviewable |
+| GitOps / PR review quality is a top buying criterion | Diffs look like Kubernetes, not Go templates |
+| Teams are new to CD and already comfortable with `kubectl apply` YAML | Lower cognitive load |
+| Promotion is image/config bumps across stages (often with Kargo) | Transformers + overlays fit the flow |
+
+#### Prefer **Helm** when…
+
+| Situation | Why |
+|-----------|-----|
+| Installing third-party / vendor software | Chart is what the vendor supports |
+| One package must support many optional features | Values + conditionals beat overlay explosion |
+| You need a versioned artifact to distribute to other teams or customers | Charts are the packaging standard |
+| Buyers already standardize on a chart museum / OCI charts | Meet them where they are |
+| Complex install graph (dependencies, subcharts) | Helm’s dependency model is built for it |
+
+#### Prefer **both** (common enterprise answer)
+
+```
+Third-party / vendors     → Helm charts (Argo CD helm source)
+First-party microservices → Kustomize base + overlays
+Optional bridge           → helm template / chart → commit rendered YAML
+                            or use Helm chart + Kustomize post-renderer
+```
+
+**Interview-ready close:** “I don’t pick a religion — I pick the render model that matches ownership. If we *own* the manifests and envs are thin diffs, Kustomize. If we’re *consuming* a product with lots of install knobs, Helm. Argo CD speaks both, so the platform can standardize on GitOps without forcing one tool everywhere.”
 
 ### Demo talking points
 
 1. Show `base` + `overlays/dev` vs `overlays/prod` (replicas, resources, image).
 2. Change image in the overlay → commit → Argo CD shows OutOfSync → sync → Healthy.
 3. Mention promotion often = “update the next overlay’s image” — manually, via CI, or via **Kargo**.
+4. If asked about Helm: contrast a vendor chart install (values per env) vs the same first-party app as Kustomize overlays.
 
 ---
 
