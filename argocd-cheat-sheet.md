@@ -2,24 +2,102 @@
 
 Quick reference for everyday `argocd` / `kubectl` commands when operating Argo CD Applications.
 
-For install, GitOps layout, and promotion workflows, see [`argocd-integration-guide.md`](./argocd-integration-guide.md).
+For install, GitOps layout, and promotion workflows, see [`argocd-integration-guide.md`](./argocd-integration-guide.md).  
+For core Kubernetes object definitions (Pod, ConfigMap, CRD, …), see [`kubernetes-cheat-sheet.md`](./kubernetes-cheat-sheet.md#key-concepts-definitions).
 
 ---
 
 ## Table of Contents
 
-1. [Install CLI & Login](#install-cli--login)
-2. [Apps — List / Get / Status](#apps--list--get--status)
-3. [Sync, Refresh & Wait](#sync-refresh--wait)
-4. [Diff, History & Rollback](#diff-history--rollback)
-5. [Create / Update / Delete Apps](#create--update--delete-apps)
-6. [Repos & Clusters](#repos--clusters)
-7. [Projects](#projects)
-8. [ApplicationSets](#applicationsets)
-9. [kubectl Shortcuts (CRDs)](#kubectl-shortcuts-crds)
-10. [Logs & Debugging](#logs--debugging)
-11. [Sync Status & Health Legend](#sync-status--health-legend)
-12. [Useful One-Liners](#useful-one-liners)
+1. [Key Concepts (Definitions)](#key-concepts-definitions)
+2. [Install CLI & Login](#install-cli--login)
+3. [Apps — List / Get / Status](#apps--list--get--status)
+4. [Sync, Refresh & Wait](#sync-refresh--wait)
+5. [Diff, History & Rollback](#diff-history--rollback)
+6. [Create / Update / Delete Apps](#create--update--delete-apps)
+7. [Repos & Clusters](#repos--clusters)
+8. [Projects](#projects)
+9. [ApplicationSets](#applicationsets)
+10. [kubectl Shortcuts (CRDs)](#kubectl-shortcuts-crds)
+11. [Logs & Debugging](#logs--debugging)
+12. [Sync Status & Health Legend](#sync-status--health-legend)
+13. [Useful One-Liners](#useful-one-liners)
+
+---
+
+## Key Concepts (Definitions)
+
+Argo CD terms you’ll see in the UI, CLI, and CRDs. These are themselves Kubernetes **Custom Resources** once Argo CD is installed.
+
+### Core GitOps objects
+
+| Term | Definition |
+|------|------------|
+| **GitOps** | Desired cluster state lives in Git; a controller continuously reconciles the live cluster to match. |
+| **Application** | Argo CD CR that declares *what* to deploy (repo, path/chart, revision) and *where* (cluster, namespace). Primary unit you sync and monitor. |
+| **AppProject (Project)** | Tenancy boundary for Applications: which repos, clusters, and namespaces are allowed, plus RBAC roles. |
+| **ApplicationSet** | CR that **generates** many Applications from a template + generators (list, git, cluster, SCM/PR, …). Scale-out alternative to hand-writing every Application. |
+| **App of Apps** | Pattern: one root Application whose path contains other Application manifests; syncing the root bootstraps child apps. |
+| **CRD** | CustomResourceDefinition — how Kubernetes learns new kinds. Argo CD installs CRDs for Application, ApplicationSet, AppProject. |
+| **Custom Resource (CR)** | An instance of a CRD kind (e.g. one `Application` named `my-service-dev`). |
+
+### Sync & health
+
+| Term | Definition |
+|------|------------|
+| **Sync** | Apply the desired Git/Helm/Kustomize state to the target cluster so live matches desired. |
+| **Refresh** | Re-read Git (and rediscover live state) without necessarily applying; updates OutOfSync detection. |
+| **Hard refresh** | Invalidate caches and re-render manifests from source — use when diffs look stale. |
+| **Sync status** | Whether live matches Git: `Synced` / `OutOfSync` / `Unknown`. |
+| **Health status** | Whether resources are operational: `Healthy` / `Progressing` / `Degraded` / `Missing` / … |
+| **OutOfSync (drift)** | Live objects differ from desired (manual `kubectl` edits, failed apply, or new Git commits not yet synced). |
+| **Auto-sync** | Application `syncPolicy.automated` — Argo CD syncs when Git changes (optionally prune + self-heal). |
+| **Prune** | Delete cluster resources that exist live but were removed from Git. |
+| **Self-heal** | Automatically re-sync when someone mutates live state away from Git. |
+| **Sync wave** | Ordering hint (`argocd.argoproj.io/sync-wave`) so resource groups apply in sequence (e.g. CRDs before workloads). |
+| **Hook** | Lifecycle Job/resource run around sync (`PreSync`, `Sync`, `PostSync`, …) — migrations, smoke tests. |
+| **Revision** | Git SHA, Helm chart version, or other source version currently desired/synced. |
+
+### Sources & destinations
+
+| Term | Definition |
+|------|------------|
+| **Source** | Where manifests come from: Git path, Helm chart repo, or multi-source combo. |
+| **Destination** | Target cluster API + namespace for the Application’s resources. |
+| **Repo credential** | Secret Argo CD uses to clone private Git or pull Helm charts. |
+| **Cluster secret** | Credential/config so Argo CD can manage an external cluster (hub-and-spoke). |
+| **Kustomize** | Native manifest composition (base + overlays). Argo CD runs `kustomize build` on the path. |
+| **Helm** | Templated charts + values; Argo CD renders and applies the chart as the Application source. |
+
+### Control plane pieces
+
+| Term | Definition |
+|------|------------|
+| **argocd-server** | API + UI you log into (`argocd login`, browser). |
+| **application-controller** | Reconciles Applications: compare, sync, health. |
+| **repo-server** | Clones repos / renders Helm & Kustomize manifests for the controller. |
+| **applicationset-controller** | Watches ApplicationSets and creates/updates/deletes generated Applications. |
+| **Redis** | Cache/session store used by Argo CD components. |
+| **Notifications / Image Updater** (optional) | Adjacent tools: alert on sync/health; propose image tag updates in Git. |
+
+### Related ecosystem (often asked together)
+
+| Term | Definition |
+|------|------------|
+| **Argo Rollouts** | Progressive delivery CRDs (canary/blue-green) *inside* a cluster; complements Argo CD sync. |
+| **Kargo** | Continuous *promotion* across stages (dev→staging→prod); updates Git for Argo CD to sync. |
+| **ApplicationSet generator** | Strategy that supplies parameters to the Application template (e.g. one Application per cluster). |
+
+### Quick “which Argo object do I want?”
+
+| You need to… | Start with |
+|--------------|------------|
+| Deploy one service/env from Git | **Application** |
+| Stamp out many apps (multi-env/cluster/PR) | **ApplicationSet** |
+| Bootstrap a whole platform folder of apps | **App of Apps** (root Application) |
+| Limit which teams can deploy where | **AppProject** |
+| Force live to match Git now | **Sync** (optionally prune) |
+| Detect manual cluster edits | Sync status + **self-heal** |
 
 ---
 
@@ -258,6 +336,8 @@ kubectl -n argocd edit appproject <project>
 
 ## ApplicationSets
 
+An **ApplicationSet** generates many **Application** CRs from a template (see [definitions](#key-concepts-definitions)). Controllers create/update/delete the children; you sync the generated Applications like any other app.
+
 ```bash
 kubectl -n argocd get applicationsets
 kubectl -n argocd describe applicationset <name>
@@ -272,9 +352,7 @@ kubectl -n argocd apply -f applicationset.yaml
 
 ## kubectl Shortcuts (CRDs)
 
-```bash
-# Namespace where Argo CD lives (default)
-export ARGOCD_NS=argocd
+Argo CD’s API kinds are installed as **CRDs**. Use these when the CLI isn’t available or you want raw object status.
 
 kubectl -n $ARGOCD_NS get applications
 kubectl -n $ARGOCD_NS get app          # short name if available

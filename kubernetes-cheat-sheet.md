@@ -6,24 +6,120 @@ Quick reference for everyday `kubectl` plus advanced commands for GPU / AI / ML 
 
 ## Table of Contents
 
-1. [Setup & Context](#setup--context)
-2. [Cluster State in etcd](#cluster-state-in-etcd)
-3. [Backing Up & Restoring etcd](#backing-up--restoring-etcd)
-4. [Upgrading Kubernetes](#upgrading-kubernetes)
-5. [Namespaces](#namespaces)
-6. [Get / Inspect Resources](#get--inspect-resources)
-7. [Pods](#pods)
-8. [Deployments & Workloads](#deployments--workloads)
-9. [Services & Networking](#services--networking)
-10. [ConfigMaps & Secrets](#configmaps--secrets)
-11. [Storage](#storage)
-12. [Scaling & Rollouts](#scaling--rollouts)
-13. [Debugging & Troubleshooting](#debugging--troubleshooting)
-14. [Node Taints & Tolerations](#node-taints--tolerations)
-15. [RBAC & Security](#rbac--security)
-16. [Jobs & CronJobs](#jobs--cronjobs)
-17. [Advanced: AI / GPU Workloads](#advanced-ai--gpu-workloads)
-18. [Useful One-Liners](#useful-one-liners)
+1. [Key Concepts (Definitions)](#key-concepts-definitions)
+2. [Setup & Context](#setup--context)
+3. [Cluster State in etcd](#cluster-state-in-etcd)
+4. [Backing Up & Restoring etcd](#backing-up--restoring-etcd)
+5. [Upgrading Kubernetes](#upgrading-kubernetes)
+6. [Namespaces](#namespaces)
+7. [Get / Inspect Resources](#get--inspect-resources)
+8. [Pods](#pods)
+9. [Deployments & Workloads](#deployments--workloads)
+10. [Services & Networking](#services--networking)
+11. [ConfigMaps & Secrets](#configmaps--secrets)
+12. [Storage](#storage)
+13. [Scaling & Rollouts](#scaling--rollouts)
+14. [Debugging & Troubleshooting](#debugging--troubleshooting)
+15. [Node Taints & Tolerations](#node-taints--tolerations)
+16. [RBAC & Security](#rbac--security)
+17. [Jobs & CronJobs](#jobs--cronjobs)
+18. [Advanced: AI / GPU Workloads](#advanced-ai--gpu-workloads)
+19. [Useful One-Liners](#useful-one-liners)
+
+---
+
+## Key Concepts (Definitions)
+
+Short definitions for objects you’ll see constantly in manifests, `kubectl`, and GitOps tools. Argo CD–specific terms live in [`argocd-cheat-sheet.md`](./argocd-cheat-sheet.md#key-concepts-definitions).
+
+### Cluster building blocks
+
+| Term | Definition |
+|------|------------|
+| **Cluster** | A set of nodes running Kubernetes: control plane + workers, reached via the API server. |
+| **Node** | A machine (VM or bare metal) that runs pods. Control-plane nodes host API/etcd/scheduler; workers run workloads. |
+| **Namespace** | A virtual cluster boundary for names and RBAC. Most namespaced objects (Pods, Services, ConfigMaps) live in one. |
+| **API server** | Front door to the cluster. Validates and persists object specs; everything else watches it. |
+| **etcd** | Distributed key-value store holding cluster state (desired + reported). Back this up if you care about disaster recovery. |
+| **kubelet** | Agent on each node that starts/stops containers to match Pod specs from the API. |
+| **Controller** | Control-loop process that watches desired state and drives live state toward it (Deployment controller, etc.). |
+| **Operator** | Pattern/controller that manages a complex app via **CRDs** (e.g. databases, Argo CD itself). |
+
+### Workloads
+
+| Term | Definition |
+|------|------------|
+| **Pod** | Smallest deployable unit: one or more containers sharing network/storage on a node. Ephemeral — don’t treat a single Pod as durable. |
+| **Container** | Process isolation unit inside a Pod (usually an OCI image). |
+| **Deployment** | Declares a replicated, stateless app. Owns ReplicaSets and supports rolling updates. |
+| **ReplicaSet** | Ensures N identical Pods run. Usually managed by a Deployment, not by hand. |
+| **StatefulSet** | Ordered, sticky identity pods for stateful apps (stable DNS, PVCs per pod). |
+| **DaemonSet** | Runs one pod per (eligible) node — agents, log shippers, device plugins. |
+| **Job** | Runs pods until a finite task completes successfully (batch / migrate). |
+| **CronJob** | Creates Jobs on a schedule. |
+| **Replica** | One running copy of a pod template (e.g. Deployment `replicas: 3`). |
+
+### Config & identity of data
+
+| Term | Definition |
+|------|------------|
+| **ConfigMap** | API object holding non-sensitive config as key/value data or files. Mount as env vars or volumes. |
+| **Secret** | Like a ConfigMap but for sensitive data (tokens, passwords, certs). Base64-encoded at rest in etcd — still encrypt/enable KMS for real secrecy. |
+| **Volume** | Storage attached to a Pod (emptyDir, config/secret volume, PVC, etc.). |
+| **PersistentVolume (PV)** | Cluster-level chunk of durable storage provisioned statically or dynamically. |
+| **PersistentVolumeClaim (PVC)** | Namespace request for storage (“I need 20Gi ReadWriteOnce”); binds to a PV. |
+| **StorageClass** | Template for dynamic provisioning (disk type, reclaim policy, provisioner). |
+
+### Networking
+
+| Term | Definition |
+|------|------------|
+| **Service** | Stable virtual IP / DNS name that load-balances to matching pods (ClusterIP, NodePort, LoadBalancer). |
+| **Endpoints / EndpointSlice** | The ready pod IPs a Service currently targets. |
+| **Ingress** | HTTP/S routing rules from outside the cluster to Services (needs an Ingress controller). |
+| **NetworkPolicy** | Firewall rules for pod-to-pod (and sometimes egress) traffic, enforced by the CNI. |
+| **CNI** | Container Network Interface plugin that provides pod IPs and network policy implementation. |
+| **DNS (CoreDNS)** | In-cluster name resolution (`my-svc.my-ns.svc.cluster.local`). |
+
+### Scheduling & capacity
+
+| Term | Definition |
+|------|------------|
+| **Label** | Key/value tag on objects for selection (`app=api`). |
+| **Selector** | Query over labels (Services, Deployments, NetworkPolicies use them). |
+| **Annotation** | Non-identifying metadata (tooling, checksums, ingress settings) — not for selection. |
+| **Request / Limit** | CPU/memory the scheduler accounts for (request) vs hard cap (limit). |
+| **Taint** | Node mark that *repels* pods unless they **tolerate** it (e.g. GPU nodes, control-plane). |
+| **Toleration** | Pod permission to schedule onto a tainted node. |
+| **Affinity / Anti-affinity** | Prefer/require pods on same or different nodes/zones relative to other pods or node labels. |
+| **ResourceQuota** | Namespace cap on aggregate CPU, memory, object counts. |
+| **LimitRange** | Default/max/min requests and limits for pods in a namespace. |
+
+### APIs, extensibility & GitOps-adjacent
+
+| Term | Definition |
+|------|------------|
+| **Resource / Object** | An instance of an API kind (`Deployment/nginx`, `ConfigMap/app-config`) stored in etcd. |
+| **Kind / API group** | Type name (`Deployment`) and group/version (`apps/v1`) in a manifest’s `apiVersion`. |
+| **CRD (CustomResourceDefinition)** | Extends the Kubernetes API with a new kind (e.g. `Application`, `Rollout`, `Certificate`). After install, you `kubectl get` it like a built-in. |
+| **Custom Resource (CR)** | One instance of a CRD kind — the data the operator acts on. |
+| **Admission webhook** | API-server plugin that validates or mutates objects before they are persisted. |
+| **RBAC** | Role-Based Access Control: **Role/ClusterRole** (permissions) + **RoleBinding/ClusterRoleBinding** (who gets them). |
+| **ServiceAccount** | Identity for in-cluster processes (pods) when talking to the API. |
+| **Manifest** | YAML/JSON describing desired objects; applied with `kubectl apply` or synced by GitOps. |
+| **Desired vs live state** | What you declared (Git/API) vs what actually runs; controllers / GitOps close the gap. |
+
+### Quick “which object do I want?”
+
+| You need to… | Start with |
+|--------------|------------|
+| Run a stateless web app | **Deployment** + **Service** (+ **Ingress**) |
+| Inject non-secret settings | **ConfigMap** |
+| Inject passwords/tokens | **Secret** |
+| Give a pod durable disk | **PVC** (+ **StorageClass**) |
+| Run one agent per node | **DaemonSet** |
+| Restrict who can deploy | **RBAC** (Role + Binding) |
+| Add a new API type (operator) | **CRD** + controller |
 
 ---
 
