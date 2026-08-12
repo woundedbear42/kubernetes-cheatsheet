@@ -354,6 +354,10 @@ kubectl -n argocd apply -f applicationset.yaml
 
 Argo CD’s API kinds are installed as **CRDs**. Use these when the CLI isn’t available or you want raw object status.
 
+```bash
+# Namespace where Argo CD lives (default)
+export ARGOCD_NS=argocd
+
 kubectl -n $ARGOCD_NS get applications
 kubectl -n $ARGOCD_NS get app          # short name if available
 kubectl -n $ARGOCD_NS get applicationsets

@@ -2,6 +2,8 @@
 
 Quick reference for everyday `kubectl` plus advanced commands for GPU / AI / ML workloads.
 
+Definitions for Pods, ConfigMaps, CRDs, and other core objects are in [Key Concepts](#key-concepts-definitions). Argo CD terms are in [`argocd-cheat-sheet.md`](./argocd-cheat-sheet.md#key-concepts-definitions).
+
 ---
 
 ## Table of Contents
