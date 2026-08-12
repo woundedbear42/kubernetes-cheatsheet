@@ -88,6 +88,24 @@ CI builds image → Git updated (tag/digest) → Argo CD syncs manifests
 
 **SE soundbite:** App of Apps is great for *bootstrap*; ApplicationSets are better for *scale and templating*.
 
+#### App of Apps workflow (explain in ~90 seconds)
+
+```
+Root Application  →  syncs Application YAMLs from Git
+                  →  child Applications appear in argocd namespace
+                  →  each child syncs its own workload path (overlay/chart)
+```
+
+1. **Bootstrap:** install Argo CD; create one root app pointed at `argocd/applications/`.
+2. **Declare children in Git:** each file is an `Application` (service/env or infra component).
+3. **Root sync:** creates/updates those Application CRs (auto-prune removes deleted ones).
+4. **Child sync:** each child reconciles Deployments/Services on its target cluster/namespace.
+5. **Day-2:** new service = new child YAML commit; config change = overlay/chart commit on the child path.
+
+**Don’t confuse health:** root Healthy means child Apps exist; **pod health lives on the children**.
+
+Full layout, child YAML examples, sync cascade, waves, and pitfalls: [`argocd-integration-guide.md`](./argocd-integration-guide.md#8-app-of-apps--applicationsets).
+
 ### 2. Multi-cluster topologies
 
 | Topology | Pattern | Buyer trade-off |
@@ -429,8 +447,8 @@ Depending on the employer (often Akuity or a partner/vendor in the Argo ecosyste
 
 1. Rehearse a 2-minute “who I am + why Argo SE” pitch.
 2. Rebuild one tiny Argo CD demo mentally: app from Git → sync → drift → heal.
-3. Skim Applications, ApplicationSets, sync policies, [Kustomize](#kustomize-manifest-composition), [Kargo](#kargo-continuous-promotion), and [deployment models](#deployment-models-with-argo-cd) (plus this repo’s Argo CD / K8s guides).
-4. Be ready with one-sentence contrasts: App of Apps vs ApplicationSets; **Kustomize vs Helm** (and when you’d pick each); Argo CD vs Kargo vs Rollouts; rolling vs canary.
+3. Skim Applications, ApplicationSets, the [App of Apps workflow](#1-how-you-structure-apps-in-argo-cd), sync policies, [Kustomize](#kustomize-manifest-composition), [Kargo](#kargo-continuous-promotion), and [deployment models](#deployment-models-with-argo-cd) (plus this repo’s Argo CD / K8s guides).
+4. Be ready with one-sentence contrasts: **App of Apps vs ApplicationSets**; **Kustomize vs Helm** (and when you’d pick each); Argo CD vs Kargo vs Rollouts; rolling vs canary.
 5. Pick 2–3 customer-value stories from your past (even if not Argo-specific).
 6. Research the company’s packaging (OSS vs enterprise vs managed, and whether Kargo is in the portfolio) so your “why here” isn’t generic.
 

@@ -389,9 +389,54 @@ metadata:
 
 ## 8. App of Apps & ApplicationSets
 
-### App of Apps
+### App of Apps — mental model
 
-One root Application whose path contains other Application manifests. Bootstrap an entire platform from a single entrypoint.
+**App of Apps** means one **root** Application whose Git path contains other `Application` (and often `AppProject`) manifests. Syncing the root creates/updates the child Applications; those children then sync the real workloads.
+
+```
+Git: argocd/applications/*.yaml     (Application CRs)
+              │
+              ▼
+        Root Application  ──sync──►  creates child Applications in the argocd namespace
+              │
+              ├──────────────►  my-service-dev   ──sync──►  apps/my-service/overlays/dev
+              ├──────────────►  my-service-prod  ──sync──►  apps/my-service/overlays/prod
+              └──────────────►  ingress-nginx    ──sync──►  infra/ingress
+```
+
+Use it to **bootstrap a platform from a single entrypoint**: install Argo CD once, apply (or declare) the root app, and the rest of the estate comes from Git.
+
+### Repo layout for App of Apps
+
+```
+gitops/
+  apps/                              # workload desired state
+    my-service/
+      base/
+      overlays/
+        dev/
+        staging/
+        prod/
+    other-service/
+      ...
+  infrastructure/
+    ingress/
+    cert-manager/
+  argocd/
+    projects/
+      platform.yaml                  # AppProject(s)
+      team-a.yaml
+    applications/                    # <-- root Application points HERE
+      my-service-dev.yaml
+      my-service-staging.yaml
+      my-service-prod.yaml
+      ingress.yaml
+    root-app.yaml                    # the root Application itself (optional in-repo)
+```
+
+**Convention:** children live under something like `argocd/applications/`; workloads stay under `apps/` or `infrastructure/`. Don’t mix Application CRs and Deployments in the same path the root syncs — the root should mostly render `Application` / `AppProject` kinds.
+
+### Root Application
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -399,20 +444,196 @@ kind: Application
 metadata:
   name: root
   namespace: argocd
+  # finalizer optional: cascade-delete children when root is deleted
+  # finalizers:
+  #   - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
     repoURL: https://github.com/org/gitops.git
     targetRevision: main
-    path: argocd/applications
+    path: argocd/applications          # directory of child Application manifests
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: argocd                   # Applications must live in the Argo CD namespace
+  syncPolicy:
+    automated:
+      prune: true                      # delete child Apps removed from Git
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+Bootstrap options:
+
+```bash
+# One-time imperative bootstrap (then manage root from Git too, if you want)
+argocd app create root \
+  --repo https://github.com/org/gitops.git \
+  --path argocd/applications \
+  --dest-server https://kubernetes.default.svc \
+  --dest-namespace argocd \
+  --sync-policy automated \
+  --auto-prune --self-heal
+
+# Or apply the root Application YAML once
+kubectl apply -n argocd -f argocd/root-app.yaml
+```
+
+After that, **adding a new service = commit a new child Application YAML**; the root auto-sync picks it up.
+
+### Child Application examples
+
+**Workload (Kustomize overlay):**
+
+```yaml
+# argocd/applications/my-service-dev.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-service-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: my-service
+    env: dev
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/org/gitops.git
+    targetRevision: main
+    path: apps/my-service/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: my-service-dev
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 ```
+
+**Prod child (often manual sync):**
+
+```yaml
+# argocd/applications/my-service-prod.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-service-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: my-service
+    env: prod
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/org/gitops.git
+    targetRevision: main
+    path: apps/my-service/overlays/prod
+  destination:
+    name: prod-cluster                 # registered cluster name, or server URL
+    namespace: my-service
+  # No automated sync — gated / manual for change control
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+```
+
+**Infra child (Helm chart):**
+
+```yaml
+# argocd/applications/ingress.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress-nginx
+  namespace: argocd
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/org/gitops.git
+    targetRevision: main
+    path: infrastructure/ingress       # chart or values wrapper in Git
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ingress-nginx
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+### Sync cascade (what happens in order)
+
+1. **You commit** a new/changed file under `argocd/applications/` (or change a workload overlay).
+2. **Root Application** refreshes (webhook or poll), shows OutOfSync if child Application CRs changed.
+3. **Root syncs** → Argo CD applies/updates `Application` objects in the `argocd` namespace.
+4. **Each child Application** independently refreshes its own `spec.source` path.
+5. **Child syncs** (auto or manual) → Deployments/Services/etc. converge on the target cluster/namespace.
+6. **Health rolls up:** root is Healthy when its resources (the child Apps) exist; **workload health is on the children** — check those for pod failures.
+
+```
+Commit child YAML  →  root OutOfSync  →  root sync  →  child App exists
+Commit overlay     →  child OutOfSync →  child sync →  pods/services update
+```
+
+Useful commands:
+
+```bash
+argocd app get root
+argocd app sync root                  # create/update child Applications only
+argocd app list                       # should show root + children
+argocd app get my-service-dev
+argocd app sync my-service-dev        # sync the workload
+argocd app wait my-service-dev --health --sync
+```
+
+### Ordering with sync waves (optional)
+
+When children must appear in order (CRDs/operators before workloads), set waves on the **Application manifests** the root syncs:
+
+```yaml
+metadata:
+  name: cert-manager
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+---
+metadata:
+  name: my-service-dev
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+```
+
+Lower waves sync first on the root. Within a child, use waves/hooks on the workload resources as usual.
+
+### App of Apps — common pitfalls
+
+| Pitfall | What goes wrong | Fix |
+|---------|-----------------|-----|
+| Root `destination.namespace` not `argocd` | Child Applications land in the wrong namespace; controller ignores them | Destination namespace = Argo CD install namespace |
+| Root path includes workload YAML | Root tries to sync Deployments into `argocd` | Root path = Application/AppProject manifests only |
+| No auto-prune on root | Deleted child YAML leaves orphan Applications | `automated.prune: true` on root (with care) |
+| Expecting root health = pod health | Root shows Healthy while an app is Broken | Monitor **child** Apps for workload health |
+| Giant single root with hundreds of hand-written children | YAML fatigue; drift between envs | Prefer **ApplicationSets** for generation; keep App of Apps for bootstrap / sparse roots |
+| `kubectl apply` children outside Git | Drift from the root’s desired set; next prune may delete them | Children only via Git + root sync |
+| Finalizer + delete root casually | Cascade deletes all children and their resources | Understand finalizers before enabling; prefer prune via Git removes |
+| Same project `destination`/`source` too open | Any child can point anywhere | Tighten AppProjects; separate projects per team |
+
+### App of Apps vs ApplicationSets
+
+| | **App of Apps** | **ApplicationSets** |
+|--|-----------------|---------------------|
+| How children appear | Explicit YAML files synced by a root Application | Generator + template creates Applications |
+| Best for | Bootstrap, small/medium estates, infra apps you want fully explicit | Multi-env, multi-cluster, PR previews, identical app shapes at scale |
+| Change to add N clusters | N new YAML files (or copy/paste) | Often one generator element / cluster secret |
+| SE soundbite | “One app installs the platform.” | “One template stamps out the fleet.” |
+
+They compose: a root App of Apps can include an ApplicationSet manifest, or you bootstrap with a root app and let ApplicationSets own the high-cardinality children.
 
 ### ApplicationSet (generate many apps)
 

@@ -10,7 +10,7 @@ Practical kubectl references for day-to-day cluster work and AI/GPU workloads, p
 | [kubernetes-rbac-advanced-guide.md](./kubernetes-rbac-advanced-guide.md) | Deep-dive RBAC: roles, bindings, least privilege, tenant isolation patterns, debugging |
 | [kubernetes-deployment-models.md](./kubernetes-deployment-models.md) | Common release models: recreate, rolling, blue-green, canary, progressive delivery, GitOps promotion |
 | [argocd-cheat-sheet.md](./argocd-cheat-sheet.md) | Quick `argocd` / `kubectl` commands for apps, sync, repos, projects, and debugging |
-| [argocd-integration-guide.md](./argocd-integration-guide.md) | Argo CD install, GitOps layout, Application workflow, sync/promotion, and troubleshooting |
+| [argocd-integration-guide.md](./argocd-integration-guide.md) | Argo CD install, GitOps layout, Application workflow, App of Apps cascade, sync/promotion, and troubleshooting |
 | [argocd-sales-engineer-interview-prep.md](./argocd-sales-engineer-interview-prep.md) | Recruitment-call prep for an Argo CD sales engineer role: fluency, deployment models, Kustomize, Kargo, discovery |
 
 ## Quick start
