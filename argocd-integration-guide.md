@@ -1,6 +1,6 @@
 # Argo CD Integration Guide
 
-A practical guide to integrating Kubernetes with Argo CD — install options, GitOps layout, Application manifests, day-to-day workflow, and troubleshooting.
+A practical guide to integrating Kubernetes with Argo CD — install options, GitOps layout, Application manifests, App of Apps workflow, day-to-day sync, and troubleshooting.
 
 For a command-focused quick reference, see [`argocd-cheat-sheet.md`](./argocd-cheat-sheet.md).
 
