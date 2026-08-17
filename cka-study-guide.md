@@ -1,13 +1,13 @@
 # CKA Study Guide — Drills & Sample Questions
 
-Hands-on prep for the **Certified Kubernetes Administrator (CKA)** exam. This guide maps to the [official CNCF CKA curriculum](https://github.com/cncf/curriculum) (Kubernetes **v1.35** as of the Linux Foundation exam page), with timed drills and exam-style tasks you can run on a local cluster.
+Hands-on prep for the **Certified Kubernetes Administrator (CKA)** exam. This guide maps to the [official CNCF CKA curriculum](https://github.com/cncf/curriculum) (Kubernetes **v1.35** as of the Linux Foundation exam page), with timed drills, sample tasks, and a **Killer.sh-first** simulation plan.
 
 Related refs in this repo:
 - [`kubernetes-cheat-sheet.md`](./kubernetes-cheat-sheet.md) — kubectl, etcd backup/restore, upgrades
 - [`kubernetes-rbac-advanced-guide.md`](./kubernetes-rbac-advanced-guide.md) — RBAC deep dive
 - [`kubernetes-deployment-models.md`](./kubernetes-deployment-models.md) — rollouts and release models
 
-> **Disclaimer:** Not affiliated with CNCF/LF. Weights and topics change; always verify against the [current curriculum PDF](https://github.com/cncf/curriculum) and [LF exam page](https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/).
+> **Disclaimer:** Not affiliated with CNCF/LF or Killer Shell. Weights and topics change; always verify against the [current curriculum PDF](https://github.com/cncf/curriculum) and [LF exam page](https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/).
 
 ---
 
@@ -15,15 +15,16 @@ Related refs in this repo:
 
 1. [Exam Snapshot](#exam-snapshot)
 2. [How to Study](#how-to-study)
-3. [Domain 1 — Troubleshooting (30%)](#domain-1--troubleshooting-30)
-4. [Domain 2 — Cluster Architecture, Installation & Configuration (25%)](#domain-2--cluster-architecture-installation--configuration-25)
-5. [Domain 3 — Services & Networking (20%)](#domain-3--services--networking-20)
-6. [Domain 4 — Workloads & Scheduling (15%)](#domain-4--workloads--scheduling-15)
-7. [Domain 5 — Storage (10%)](#domain-5--storage-10)
-8. [Timed Drills](#timed-drills)
-9. [Sample Exam Tasks (with solutions)](#sample-exam-tasks-with-solutions)
-10. [Exam-Day Checklist](#exam-day-checklist)
-11. [Quick Command Muscle Memory](#quick-command-muscle-memory)
+3. [Killer.sh Simulation Plan](#killersh-simulation-plan)
+4. [Domain 1 — Troubleshooting (30%)](#domain-1--troubleshooting-30)
+5. [Domain 2 — Cluster Architecture, Installation & Configuration (25%)](#domain-2--cluster-architecture-installation--configuration-25)
+6. [Domain 3 — Services & Networking (20%)](#domain-3--services--networking-20)
+7. [Domain 4 — Workloads & Scheduling (15%)](#domain-4--workloads--scheduling-15)
+8. [Domain 5 — Storage (10%)](#domain-5--storage-10)
+9. [Timed Drills](#timed-drills)
+10. [Sample Exam Tasks (with solutions)](#sample-exam-tasks-with-solutions)
+11. [Exam-Day Checklist](#exam-day-checklist)
+12. [Quick Command Muscle Memory](#quick-command-muscle-memory)
 
 ---
 
@@ -55,17 +56,19 @@ Related refs in this repo:
 
 ## How to Study
 
-### Lab setup (pick one)
+**Primary mock:** [Killer.sh](https://killer.sh) (included with the LF exam voucher — two sessions). Use local Kind/kubeadm only for daily drills and remediating Killer.sh misses.
+
+### Lab setup
 
 ```bash
-# Kind (fast local multi-node)
+# Daily drills / weak-domain remediation (between Killer.sh sessions)
 kind create cluster --name cka --config multi-node.yaml
 
-# Or kubeadm VMs (closest to exam control-plane tasks)
-# Or killercoda / killer.sh practice environments
+# Closest to control-plane tasks if you need extra etcd/kubeadm reps outside Killer.sh
+# kubeadm VMs or a disposable multi-node lab
 ```
 
-Enable imperative muscle memory:
+Enable imperative muscle memory (same habits you will use in Killer.sh):
 
 ```bash
 export do="--dry-run=client -o yaml"
@@ -73,7 +76,7 @@ alias k=kubectl
 # Example: k run nginx --image=nginx $do > pod.yaml
 ```
 
-### Suggested cadence
+### Suggested cadence (Killer.sh-centered)
 
 | Phase | Focus |
 |-------|--------|
@@ -81,14 +84,108 @@ alias k=kubectl
 | Cluster ops | kubeadm install/upgrade path, etcd snapshot/restore, RBAC, Helm/Kustomize |
 | Networking depth | NetworkPolicy from scratch, Ingress + Gateway API, DNS debugging |
 | Troubleshooting reps | Broken pods/nodes/control-plane components under a timer |
-| Mocks | Killer.sh + at least one full 2-hour mock; review every miss |
+| **Killer.sh session A** | First full sim — treat as dress rehearsal, then deep review |
+| Remediation | Replay failed topics with this guide’s drills on a local cluster |
+| **Killer.sh session B** | Second sim (different question set) — confirm timing + weak domains fixed |
+| Exam | Book within ~1 week of a strong session B review |
 
-### What “good enough” looks like
+### What “good enough” looks like before activating Killer.sh
 
 - Create common resources **without memorizing full YAML** (`run`, `create deploy`, `expose`, `set image`, then edit).
 - Navigate kubernetes.io docs in under 30 seconds to the right page.
 - Restore etcd and upgrade a kubeadm control plane at least twice from cold.
 - Write a deny-all NetworkPolicy and selective allow rules without looking up the API shape more than once.
+- Finish drill sets 1–2 in this guide under the listed time boxes.
+
+---
+
+## Killer.sh Simulation Plan
+
+Your voucher includes **two** Killer.sh CKA sessions (**CKA-A** and **CKA-B**), with **different** question sets (~17 tasks each). Do not burn both early.
+
+### Facts that matter
+
+| Item | Detail |
+|------|--------|
+| Access | LF Training Portal → Exam Checklist → **Exam Simulator** → Killer.sh |
+| Sessions | **2** included (CKA-A and CKA-B; different questions) |
+| Activation | **36 continuous hours** from the moment you start a session (time-based, not usage-based) |
+| After the 2h countdown | Solutions + score unlock; **environment still usable** until the 36h window ends |
+| After 36h | Questions + solutions remain; interactive cluster does not |
+| Difficulty | Often **harder** than the real exam — a mid score with solid review is normal |
+
+Confirm current details on the [Killer.sh FAQ](https://killer.sh/faq) before you activate.
+
+### When to activate each session
+
+| Session | Activate when… | Goal |
+|---------|----------------|------|
+| **A** | You can finish drill sets 1–2 comfortably and know RBAC / NetworkPolicy / etcd backup cold | Baseline under real UI pressure; map every miss to a domain |
+| **B** | You have remade every Session A miss at least once on a local lab | Timing discipline + proof weak domains are fixed; last dress rehearsal |
+
+Block **two consecutive free days** per session so you can attempt → review → retry inside the same 36h window.
+
+### Session day playbook (repeat for A and B)
+
+**Before you click Start**
+
+1. Quiet block of ~3 hours for the first attempt (2h exam + buffer).
+2. Bookmarks only: kubernetes.io, Kubernetes blog, Helm docs, Gateway API docs.
+3. Same aliases/`$do` habit you use in drills (if the sim shell allows).
+4. Notebook ready: one row per question — context, namespace, pass/fail, topic tag.
+
+**First attempt (treat the countdown as the real exam)**
+
+1. Skim all tasks if the UI allows; mark easy / medium / hard.
+2. Context switch **first** on every question: `kubectl config use-context …`
+3. Skip anything past ~8–10 minutes; return later.
+4. Verify names/namespaces before leaving a task.
+5. When the countdown hits 0, **stop and open the official solutions** — do not keep guessing cold.
+
+**Inside the remaining 36 hours (this is where most learning happens)**
+
+1. Grade yourself: Fully correct / Partial / Failed / Time-out.
+2. Tag each miss: Troubleshooting | Architecture | Networking | Workloads | Storage.
+3. For every Failed/Partial: re-do the task in the still-live environment using the solution as a last resort.
+4. Reset the environment (if available) and **re-run the full set** once more under the 2h countdown.
+5. Target for Session B readiness: roughly **≥90%** on a clean Killer.sh pass *or* only 1–2 stubborn misses you already understand.
+
+### Post-sim remediation map
+
+| If Killer.sh exposed… | Drill back to |
+|------------------------|---------------|
+| Broken pods / nodes / control plane | [Domain 1](#domain-1--troubleshooting-30) + Drill B |
+| etcd / kubeadm / RBAC / Helm / Kustomize | [Domain 2](#domain-2--cluster-architecture-installation--configuration-25) + Drill C / set 2 |
+| Services, NetworkPolicy, Ingress, Gateway, DNS | [Domain 3](#domain-3--services--networking-20) + Drill D |
+| Rollouts, scheduling, HPA, ConfigMaps/Secrets | [Domain 4](#domain-4--workloads--scheduling-15) + Drill E |
+| PV / PVC / StorageClass | [Domain 5](#domain-5--storage-10) + Drill F |
+| Running out of time | [Timed Drills](#timed-drills) set 3 + skip/flag habit |
+
+### Killer.sh scorecard (copy per session)
+
+```text
+Session: A / B     Date activated: ________     36h ends: ________
+
+Q# | Domain            | Result (F/P/X) | Minutes | Fix / notes
+---| ----------------- | -------------- | ------- | -----------
+1  |                   |                |         |
+…  |                   |                |         |
+17 |                   |                |         |
+
+First-pass score: ___ / ___
+Retry score (same 36h): ___ / ___
+Top 3 weak topics to drill before next sim/exam:
+1.
+2.
+3.
+```
+
+### Killer.sh pitfalls
+
+- Activating a session “just to look around” starts the 36h clock permanently.
+- Using both A and B in the same weekend with no remediation in between wastes the second unique question set.
+- Chasing a perfect Killer.sh score forever — the sim is intentionally tough; remediate, then take the real exam while skills are warm.
+- Ignoring partial credit: do the parts you know even on a hard multi-step task.
 
 ---
 
@@ -592,15 +689,17 @@ Run these under a timer. Grade yourself: Done correctly / Partial / Failed. Redo
 | 6 | Kustomize overlay: bump replicas to 4 and apply | 6 min |
 | 7 | Find all non-Running pods cluster-wide; fix one intentional failure you planted | 7 min |
 
-### Drill set 3 — 60 minutes (mock half-exam)
+### Drill set 3 — 60 minutes (mock half-exam / Killer.sh warm-up)
 
-Mix 8–10 tasks across troubleshooting, networking (Ingress or Gateway), storage, and a kubeadm/etcd style task if your lab supports it. Practice **context switching**:
+Use this the day **before** activating Killer.sh A or B. Mix 8–10 tasks across troubleshooting, networking (Ingress or Gateway), storage, and a kubeadm/etcd style task if your lab supports it. Practice **context switching**:
 
 ```bash
 kubectl config get-contexts
 kubectl config use-context <cluster>
-# Many CKA tasks require changing context — do this first on every question
+# Many CKA (and Killer.sh) tasks require changing context — do this first on every question
 ```
+
+After Killer.sh Session A, rebuild a custom 60-minute set from **only** your failed domains before unlocking Session B.
 
 ---
 
@@ -915,9 +1014,11 @@ kubectl get hpa -n work
 ### Before the exam
 
 - [ ] ID ready; PSI/exam desktop requirements met; quiet room
-- [ ] Killer.sh both sessions used; note your weak domains
+- [ ] Killer.sh **Session A** done + remediations drilled
+- [ ] Killer.sh **Session B** done; scorecard weak domains closed out
 - [ ] Practiced with only allowed bookmarks (kubernetes.io, blog, Helm, Gateway API)
 - [ ] Comfortable with copy/paste, terminal tabs, and `kubectl` imperative flags
+- [ ] Exam booked while Session B skills are still warm (ideally within ~1 week)
 
 ### During every task
 
@@ -984,10 +1085,11 @@ alias kl='kubectl logs'
 
 ## Cross-links & next steps
 
-1. Drill from this guide daily; track miss rates per domain.
-2. Use [`kubernetes-cheat-sheet.md`](./kubernetes-cheat-sheet.md) for etcd/upgrade command detail.
-3. Use [`kubernetes-rbac-advanced-guide.md`](./kubernetes-rbac-advanced-guide.md) if RBAC scenarios feel slow.
-4. Schedule Killer.sh early enough to leave a week for weak-domain remediation.
-5. Re-check [CNCF curriculum](https://github.com/cncf/curriculum) the week of your exam for weight/topic changes.
+1. Drill from this guide until sets 1–2 are comfortable, then activate **Killer.sh A**.
+2. Use the [Killer.sh scorecard](#killersh-simulation-plan) + remediation map; re-drill misses locally.
+3. Activate **Killer.sh B** only after Session A gaps are closed; treat it as the final dress rehearsal.
+4. Use [`kubernetes-cheat-sheet.md`](./kubernetes-cheat-sheet.md) for etcd/upgrade command detail.
+5. Use [`kubernetes-rbac-advanced-guide.md`](./kubernetes-rbac-advanced-guide.md) if RBAC scenarios feel slow.
+6. Re-check [CNCF curriculum](https://github.com/cncf/curriculum) the week of your exam for weight/topic changes.
 
-**Bottom line:** CKA rewards fast, correct `kubectl` under pressure — especially troubleshooting, kubeadm/etcd, and networking. Practice timed drills until verification is habit, not an afterthought.
+**Bottom line:** Use this guide for reps, **Killer.sh for simulation**. Two 36h sessions with deliberate review beat burning both mocks early — then sit the real exam while the timing habit is fresh.
