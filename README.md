@@ -1,6 +1,6 @@
 # Kubernetes Cheat Sheets
 
-Practical kubectl references for day-to-day cluster work and AI/GPU workloads, plus RBAC, deployment models, CKA exam prep, and Argo CD cheat sheets / guides.
+Practical kubectl references for day-to-day cluster work and AI/GPU workloads, plus RBAC, deployment models, CKA exam prep, Argo CD guides, and interview prep.
 
 ## Documents
 
@@ -13,6 +13,7 @@ Practical kubectl references for day-to-day cluster work and AI/GPU workloads, p
 | [argocd-cheat-sheet.md](./argocd-cheat-sheet.md) | Argo CD definitions plus quick `argocd` / `kubectl` commands for apps, sync, repos, projects, and debugging |
 | [argocd-integration-guide.md](./argocd-integration-guide.md) | Argo CD install, GitOps layout, Application workflow, App of Apps cascade, sync/promotion, and troubleshooting |
 | [argocd-sales-engineer-interview-prep.md](./argocd-sales-engineer-interview-prep.md) | Recruitment-call prep for an Argo CD sales engineer role: fluency, deployment models, Kustomize, Kargo, discovery |
+| [scaleops-tam-interview-prep.md](./scaleops-tam-interview-prep.md) | Recruiter-call prep for a ScaleOps Technical Account Manager role: product fluency, K8s credibility, discovery, objections |
 
 ## Quick start
 
