@@ -9,6 +9,8 @@ Related technical refs in this repo:
 
 > **Note:** ScaleOps’ TAM JD often blends **post-sale adoption** with **sales-partnered technical wins** (discovery → POC → expand). Clarify on the call whether the seat is more CS/TAM, SE-hybrid, or expansion-led — then mirror their language.
 
+**Next round:** If you’re past the recruiter screen and meeting a peer TAM, use [`scaleops-tam-technical-interview-prep.md`](./scaleops-tam-technical-interview-prep.md).
+
 ---
 
 ## Table of Contents

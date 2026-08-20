@@ -14,6 +14,7 @@ Practical kubectl references for day-to-day cluster work and AI/GPU workloads, p
 | [argocd-integration-guide.md](./argocd-integration-guide.md) | Argo CD install, GitOps layout, Application workflow, App of Apps cascade, sync/promotion, and troubleshooting |
 | [argocd-sales-engineer-interview-prep.md](./argocd-sales-engineer-interview-prep.md) | Recruitment-call prep for an Argo CD sales engineer role: fluency, deployment models, Kustomize, Kargo, discovery |
 | [scaleops-tam-interview-prep.md](./scaleops-tam-interview-prep.md) | Recruiter-call prep for a ScaleOps Technical Account Manager role: product fluency, K8s credibility, discovery, objections |
+| [scaleops-tam-technical-interview-prep.md](./scaleops-tam-technical-interview-prep.md) | Peer TAM technical interview prep: rightsizing vs VPA/HPA/Karpenter, POC playbooks, scenarios, escalations |
 
 ## Quick start
 
